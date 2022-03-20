@@ -99,7 +99,7 @@ func main() {
 	var waitGroup sync.WaitGroup
 
 	resultChannel := make(chan PortCheckResult)
-	go listenPortCheckResult(&checkState, resultChannel, waitGroup)
+	go listenPortCheckResult(&checkState, resultChannel, &waitGroup)
 
 	// start loop
 	for port := minPort; port <= maxPort; port++ {
@@ -179,12 +179,11 @@ func printResult(title string, result []PortProtocolCheckResult) {
 func listenPortCheckResult(
 	checkState *CheckState,
 	resultChannel chan PortCheckResult,
-	waitGroup sync.WaitGroup,
+	waitGroup *sync.WaitGroup,
 ) {
-	waitGroup.Done()
-
 	for {
 		result := <-resultChannel
+		waitGroup.Done()
 
 		// add state
 		checkState.mutex.Lock()
