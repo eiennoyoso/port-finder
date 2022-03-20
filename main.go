@@ -154,14 +154,16 @@ func main() {
 	waitGroup.Wait()
 
 	fmt.Println("\n")
-	printResult("Found services", checkState.successResults)
 
+	// print errors
 	if *verbose {
 		if len(checkState.errorResults) > 0 {
 			printResult("Errors", checkState.errorResults)
 		}
 	}
 
+	// print results
+	printResult("Found services", checkState.successResults)
 }
 
 func printResult(title string, result []PortProtocolCheckResult) {
