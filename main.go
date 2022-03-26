@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bradfitz/gomemcache/memcache"
 )
 
 type CheckState struct {
@@ -34,6 +36,28 @@ type PortCheckResult struct {
 	failedChecks []PortProtocolCheckResult
 }
 
+type IpRange struct {
+	octet1LeftBound  int
+	octet1RightBound int
+	octet2LeftBound  int
+	octet2RightBound int
+	octet3LeftBound  int
+	octet3RightBound int
+	octet4LeftBound  int
+	octet4RightBound int
+}
+
+type PortRange struct {
+	minPort int
+	maxPort int
+}
+
+type Probes struct {
+	http      bool
+	https     bool
+	memcached bool
+}
+
 var userAgents = []string{
 	"Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.0) Opera 12.14",
 	"Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:26.0) Gecko/20100101 Firefox/26.0",
@@ -54,6 +78,7 @@ func main() {
 
 	// cli arguments
 	var ip = flag.String("ip", "", "IP Address")
+	var probesString = flag.String("probes", "", "List of probes delimited by space")
 	var maxConcurrentRequestCount = flag.Int("concurrent", 100, "Concurent request count")
 	var verbose = flag.Bool("verbose", false, "Verbose")
 	var portRangeString = flag.String("portRange", "1-65535", "Port range")
@@ -63,34 +88,18 @@ func main() {
 		log.Fatalln("Ip Address not specified")
 	}
 
+	// ip range
+
 	// port ragne
-	portRange := strings.Split((*portRangeString), "-")
-	minPort := 1
-	maxPort := 65535
-	if len(portRange) == 1 {
-		minPort, _ = strconv.Atoi(portRange[0])
-		maxPort, _ = strconv.Atoi(portRange[0])
-	} else {
-		if portRange[0] == "" {
-			portRange[0] = "1"
-		}
+	portRange := portPatternToRange(*portRangeString)
 
-		if portRange[1] == "" {
-			portRange[1] = "65535"
-		}
-
-		minPort, _ = strconv.Atoi(portRange[0])
-		maxPort, _ = strconv.Atoi(portRange[1])
-	}
-
-	if minPort > maxPort {
-		log.Fatalln("Invalid port range")
-	}
+	// probes
+	probes := probesStringToProbes(*probesString)
 
 	// init state
 	var checkState = CheckState{
 		count:          0,
-		toHandle:       maxPort - minPort + 1,
+		toHandle:       portRange.maxPort - portRange.minPort + 1,
 		handled:        0,
 		successResults: []PortProtocolCheckResult{},
 		errorResults:   []PortProtocolCheckResult{},
@@ -102,7 +111,7 @@ func main() {
 	go listenPortCheckResult(&checkState, resultChannel, &waitGroup)
 
 	// start loop
-	for port := minPort; port <= maxPort; port++ {
+	for port := portRange.minPort; port <= portRange.maxPort; port++ {
 		for {
 			if checkState.count > *maxConcurrentRequestCount {
 				time.Sleep(50 * time.Millisecond)
@@ -122,27 +131,45 @@ func main() {
 			var failedChecks []PortProtocolCheckResult
 
 			// check http
-			protocolCheckResult = checkIpHasHttpService("http", ip, port)
-			if protocolCheckResult.resultType == "success" {
-				resultChannel <- PortCheckResult{
-					successCheck: &protocolCheckResult,
-				}
+			if probes.http {
+				protocolCheckResult = checkIpHasHttpService("http", ip, port)
+				if protocolCheckResult.resultType == "success" {
+					resultChannel <- PortCheckResult{
+						successCheck: &protocolCheckResult,
+					}
 
-				return
-			} else {
-				failedChecks = append(failedChecks, protocolCheckResult)
+					return
+				} else {
+					failedChecks = append(failedChecks, protocolCheckResult)
+				}
 			}
 
 			// check https
-			protocolCheckResult = checkIpHasHttpService("https", ip, port)
-			if protocolCheckResult.resultType == "success" {
-				resultChannel <- PortCheckResult{
-					successCheck: &protocolCheckResult,
-				}
+			if probes.https {
+				protocolCheckResult = checkIpHasHttpService("https", ip, port)
+				if protocolCheckResult.resultType == "success" {
+					resultChannel <- PortCheckResult{
+						successCheck: &protocolCheckResult,
+					}
 
-				return
-			} else {
-				failedChecks = append(failedChecks, protocolCheckResult)
+					return
+				} else {
+					failedChecks = append(failedChecks, protocolCheckResult)
+				}
+			}
+
+			// check memcached
+			if probes.memcached {
+				protocolCheckResult = checkIpHasMemcachedService(ip, port)
+				if protocolCheckResult.resultType == "success" {
+					resultChannel <- PortCheckResult{
+						successCheck: &protocolCheckResult,
+					}
+
+					return
+				} else {
+					failedChecks = append(failedChecks, protocolCheckResult)
+				}
 			}
 
 			resultChannel <- PortCheckResult{
@@ -211,6 +238,71 @@ func listenPortCheckResult(
 	}
 }
 
+func probesStringToProbes(probesString string) Probes {
+	if probesString == "" {
+		return Probes{
+			http:      true,
+			https:     true,
+			memcached: true,
+		}
+	}
+
+	probes := Probes{
+		http:      false,
+		https:     false,
+		memcached: false,
+	}
+
+	probesSlice := strings.Split(probesString, " ")
+	for _, probe := range probesSlice {
+		switch probe {
+		case "http":
+			probes.http = true
+			break
+		case "https":
+			probes.https = true
+			break
+		case "memcached":
+			probes.memcached = true
+			break
+		}
+	}
+
+	return probes
+}
+
+func portPatternToRange(portRangeString string) PortRange {
+	portRange := strings.Split(portRangeString, "-")
+	minPort := 1
+	maxPort := 65535
+	if len(portRange) == 1 {
+		minPort, _ = strconv.Atoi(portRange[0])
+		maxPort, _ = strconv.Atoi(portRange[0])
+	} else {
+		if portRange[0] == "" {
+			portRange[0] = "1"
+		}
+
+		if portRange[1] == "" {
+			portRange[1] = "65535"
+		}
+
+		minPort, _ = strconv.Atoi(portRange[0])
+		maxPort, _ = strconv.Atoi(portRange[1])
+	}
+
+	if minPort > maxPort {
+		log.Fatalln("Invalid port range")
+	}
+
+	return PortRange{minPort: minPort, maxPort: maxPort}
+}
+
+func ipPatternToRange(ip string) IpRange {
+
+	return IpRange{}
+}
+
 func checkIpHasHttpService(
 	schema string,
 	ip string,
@@ -232,7 +324,7 @@ func checkIpHasHttpService(
 			port:       port,
 			protocol:   schema,
 			resultType: "success",
-			message:    "Found HTTP service at " + httpUrl + " with HTTP code " + strconv.Itoa(response.StatusCode),
+			message:    schema + "\t" + httpUrl + "\t" + strconv.Itoa(response.StatusCode),
 		}
 	} else {
 		return PortProtocolCheckResult{
@@ -242,5 +334,28 @@ func checkIpHasHttpService(
 			message:    err.Error(),
 		}
 	}
+}
 
+func checkIpHasMemcachedService(
+	ip string,
+	port int,
+) PortProtocolCheckResult {
+	mc := memcache.New(ip + ":" + strconv.Itoa(port))
+	err := mc.Ping()
+
+	if err == nil {
+		return PortProtocolCheckResult{
+			port:       port,
+			protocol:   "memcached",
+			resultType: "success",
+			message:    "memcached\t" + ip + ":" + strconv.Itoa(port),
+		}
+	} else {
+		return PortProtocolCheckResult{
+			port:       port,
+			protocol:   "memcached",
+			resultType: "error",
+			message:    err.Error(),
+		}
+	}
 }
