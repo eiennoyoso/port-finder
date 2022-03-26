@@ -126,56 +126,8 @@ func main() {
 
 		// find services on port
 		waitGroup.Add(1)
-		go (func(ip string, port int, resultChannel chan PortCheckResult) {
-			var protocolCheckResult PortProtocolCheckResult
-			var failedChecks []PortProtocolCheckResult
 
-			// check http
-			if probes.http {
-				protocolCheckResult = checkIpHasHttpService("http", ip, port)
-				if protocolCheckResult.resultType == "success" {
-					resultChannel <- PortCheckResult{
-						successCheck: &protocolCheckResult,
-					}
-
-					return
-				} else {
-					failedChecks = append(failedChecks, protocolCheckResult)
-				}
-			}
-
-			// check https
-			if probes.https {
-				protocolCheckResult = checkIpHasHttpService("https", ip, port)
-				if protocolCheckResult.resultType == "success" {
-					resultChannel <- PortCheckResult{
-						successCheck: &protocolCheckResult,
-					}
-
-					return
-				} else {
-					failedChecks = append(failedChecks, protocolCheckResult)
-				}
-			}
-
-			// check memcached
-			if probes.memcached {
-				protocolCheckResult = checkIpHasMemcachedService(ip, port)
-				if protocolCheckResult.resultType == "success" {
-					resultChannel <- PortCheckResult{
-						successCheck: &protocolCheckResult,
-					}
-
-					return
-				} else {
-					failedChecks = append(failedChecks, protocolCheckResult)
-				}
-			}
-
-			resultChannel <- PortCheckResult{
-				failedChecks: failedChecks,
-			}
-		})(*ip, port, resultChannel)
+		go probe(*ip, port, resultChannel)
 	}
 
 	waitGroup.Wait()
@@ -191,6 +143,57 @@ func main() {
 
 	// print results
 	printResult("Found services", checkState.successResults)
+}
+
+func probe(ip string, port int, resultChannel chan PortCheckResult) {
+	var protocolCheckResult PortProtocolCheckResult
+	var failedChecks []PortProtocolCheckResult
+
+	// check http
+	if probes.http {
+		protocolCheckResult = checkIpHasHttpService("http", ip, port)
+		if protocolCheckResult.resultType == "success" {
+			resultChannel <- PortCheckResult{
+				successCheck: &protocolCheckResult,
+			}
+
+			return
+		} else {
+			failedChecks = append(failedChecks, protocolCheckResult)
+		}
+	}
+
+	// check https
+	if probes.https {
+		protocolCheckResult = checkIpHasHttpService("https", ip, port)
+		if protocolCheckResult.resultType == "success" {
+			resultChannel <- PortCheckResult{
+				successCheck: &protocolCheckResult,
+			}
+
+			return
+		} else {
+			failedChecks = append(failedChecks, protocolCheckResult)
+		}
+	}
+
+	// check memcached
+	if probes.memcached {
+		protocolCheckResult = checkIpHasMemcachedService(ip, port)
+		if protocolCheckResult.resultType == "success" {
+			resultChannel <- PortCheckResult{
+				successCheck: &protocolCheckResult,
+			}
+
+			return
+		} else {
+			failedChecks = append(failedChecks, protocolCheckResult)
+		}
+	}
+
+	resultChannel <- PortCheckResult{
+		failedChecks: failedChecks,
+	}
 }
 
 func printResult(title string, result []PortProtocolCheckResult) {
