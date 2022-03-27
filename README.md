@@ -17,49 +17,57 @@ Also you may use [sokil/port-finder](https://hub.docker.com/r/sokil/port-finder)
 
 ## Useage
 
+## IP Range
+
 Scan IP address on all renge of ports:
 
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8
+docker run --rm sokil/port-finder -ipRange 8.8.8.8
 ```
 
-Scan CIDR IP range:
+Scan CIDT IP range:
 
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8/24
+docker run --rm sokil/port-finder -ipRange 8.8.8.8/24
 ```
 
 Scan IP range:
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8-8.8.8.200
+docker run --rm sokil/port-finder -ipRange 8.8.8.8-8.8.8.200
 ```
+
+## Port range
 
 Scan limited range of ports:
 
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8 -portRange 70-90
+docker run --rm sokil/port-finder -ipRange 8.8.8.8 -portRange 70-90
 ```
 
 Scan ports from defined to last
 
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8 -portRange 70-
+docker run --rm sokil/port-finder -ipRange 8.8.8.8 -portRange 70-
 ```
 
 Scan ports from first to defined:
 
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8 -portRange -90
+docker run --rm sokil/port-finder -ipRange 8.8.8.8 -portRange -90
 ```
+
+## Concurrency
 
 Define concurrency (how many ports to check one time):
 
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8 -concurrent 200
+docker run --rm sokil/port-finder -ipRange 8.8.8.8 -concurrent 200
 ```
+
+## Debug
 
 Show check errors:
 
 ```
-docker run --rm sokil/port-finder -ip 8.8.8.8 -verbose
+docker run --rm sokil/port-finder -ipRange 8.8.8.8 -verbose
 ```
