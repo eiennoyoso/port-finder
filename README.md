@@ -56,6 +56,20 @@ Scan ports from first to defined:
 docker run --rm sokil/port-finder -ipRange 8.8.8.8 -portRange -90
 ```
 
+## Probes
+
+Tools may perform probes for different services. Currently tool supports next probes:
+
+* http
+* https
+* memcached
+
+By default all probes performerd. To specify concrete probes use `-probe` option, delimited by space:
+
+```
+docker run --rm sokil/port-finder -ipRange 8.8.8.8 -probes="https memcached"
+```
+
 ## Concurrency
 
 Define concurrency (how many ports to check one time):
