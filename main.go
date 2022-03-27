@@ -63,7 +63,7 @@ func main() {
 
 	// cli arguments
 	var ipRangePattern = flag.String("ipRange", "", "IP Address Range")
-	var probesString = flag.String("probes", "", "List of probes delimited by space")
+	var probesString = flag.String("probes", "", "List of probes delimited by space. Available probes: http, https, memcached")
 	var maxConcurrentRequestCount = flag.Int("concurrent", 100, "Concurent request count")
 	var verbose = flag.Bool("verbose", false, "Verbose")
 	var portRangeString = flag.String("portRange", "1-65535", "Port range")
