@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 )
 
 type CheckState struct {
+	startTimestamp     int64
 	requestsInProgress int
 	toHandle           uint32 // count of required to handle
 	handled            uint32 // count of already handle
@@ -84,6 +86,7 @@ func main() {
 
 	// init state
 	var checkState = CheckState{
+		startTimestamp:     time.Now().Unix(),
 		requestsInProgress: 0,
 		toHandle:           uint32(portRange.Size()+1) * (ipRange.Size() + 1),
 		handled:            0,
@@ -201,6 +204,28 @@ func printResult(title string, result []PortProtocolCheckResult) {
 	}
 }
 
+func printProgress(checkState *CheckState) {
+	var eta string
+	if checkState.handled > 100 {
+		probeDuration := time.Now().Unix() - checkState.startTimestamp
+		etaSeconds := int64(checkState.toHandle-checkState.handled) * probeDuration / int64(checkState.handled)
+		eta = humanReadableTime(etaSeconds)
+	} else {
+		eta = "-:-:-"
+	}
+
+	// show progress
+	fmt.Printf(
+		"\r[%3d%%][%d/%d][ETA: %s] Errors: %d, Found: %d",
+		int64(float32(checkState.handled)/float32(checkState.toHandle)*100),
+		checkState.handled,
+		checkState.toHandle,
+		eta,
+		len(checkState.errorResults),
+		len(checkState.successResults),
+	)
+}
+
 func listenPortCheckResult(
 	checkState *CheckState,
 	resultChannel chan PortCheckResult,
@@ -222,16 +247,33 @@ func listenPortCheckResult(
 
 		checkState.mutex.Unlock()
 
-		// show progress
-		fmt.Printf(
-			"\r[%3d%%][%d/%d] Errors: %d, Found: %d",
-			int64(float32(checkState.handled)/float32(checkState.toHandle)*100),
-			checkState.handled,
-			checkState.toHandle,
-			len(checkState.errorResults),
-			len(checkState.successResults),
-		)
+		if checkState.handled == checkState.toHandle || (checkState.handled%5) == 0 {
+			printProgress(checkState)
+		}
 	}
+}
+
+func humanReadableTime(secondsTotal int64) string {
+	if secondsTotal < 60 {
+		return fmt.Sprintf("00:00:%02d", secondsTotal)
+	}
+
+	var hours, minutes, seconds int
+	var remaindedSeconds int64
+
+	if secondsTotal >= 3600 {
+		hours = int(math.Floor(float64(secondsTotal) / 3600))
+		remaindedSeconds = secondsTotal - (int64(hours) * 3600)
+	} else {
+		hours = 0
+		remaindedSeconds = secondsTotal
+	}
+
+	minutes = int(math.Floor(float64(remaindedSeconds) / 60))
+
+	seconds = int(remaindedSeconds) - (minutes * 60)
+
+	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
 }
 
 func probesStringToProbes(probesString string) Probes {
