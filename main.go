@@ -10,9 +10,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
@@ -99,6 +101,15 @@ func main() {
 	resultChannel := make(chan PortCheckResult)
 	go listenPortCheckResult(&checkState, resultChannel, &waitGroup)
 
+	// handle graceful shutdown
+	gracefullStopSignalHandler := make(chan os.Signal, 1)
+	signal.Notify(gracefullStopSignalHandler, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	go (func(channel chan os.Signal, checkState *CheckState, verbose bool) {
+		<-gracefullStopSignalHandler
+		printResults(checkState, verbose)
+		os.Exit(0)
+	})(gracefullStopSignalHandler, &checkState, *verbose)
+
 	// start loop
 	var currentIP net.IP
 	for ipRange.Valid() {
@@ -128,17 +139,7 @@ func main() {
 
 	waitGroup.Wait()
 
-	fmt.Println("\n")
-
-	// print errors
-	if *verbose {
-		if len(checkState.errorResults) > 0 {
-			printResult("Errors", checkState.errorResults)
-		}
-	}
-
-	// print results
-	printResult("Found services", checkState.successResults)
+	printResults(&checkState, *verbose)
 }
 
 func probe(ip string, port int, probes Probes, resultChannel chan PortCheckResult) {
@@ -190,6 +191,19 @@ func probe(ip string, port int, probes Probes, resultChannel chan PortCheckResul
 	resultChannel <- PortCheckResult{
 		failedChecks: failedChecks,
 	}
+}
+
+func printResults(checkState *CheckState, verbose bool) {
+	fmt.Println()
+
+	if verbose {
+		if len(checkState.errorResults) > 0 {
+			printResult("Errors", checkState.errorResults)
+		}
+	}
+
+	// print results
+	printResult("Found services", checkState.successResults)
 }
 
 func printResult(title string, result []PortProtocolCheckResult) {
