@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,12 +17,12 @@ import (
 )
 
 type CheckState struct {
-	count          int
-	toHandle       int // count of required to handle
-	handled        int // count of already handle
-	mutex          sync.RWMutex
-	successResults []PortProtocolCheckResult
-	errorResults   []PortProtocolCheckResult
+	requestsInProgress int
+	toHandle           uint32 // count of required to handle
+	handled            uint32 // count of already handle
+	mutex              sync.RWMutex
+	successResults     []PortProtocolCheckResult
+	errorResults       []PortProtocolCheckResult
 }
 
 type PortProtocolCheckResult struct {
@@ -34,22 +35,6 @@ type PortProtocolCheckResult struct {
 type PortCheckResult struct {
 	successCheck *PortProtocolCheckResult
 	failedChecks []PortProtocolCheckResult
-}
-
-type IpRange struct {
-	octet1LeftBound  int
-	octet1RightBound int
-	octet2LeftBound  int
-	octet2RightBound int
-	octet3LeftBound  int
-	octet3RightBound int
-	octet4LeftBound  int
-	octet4RightBound int
-}
-
-type PortRange struct {
-	minPort int
-	maxPort int
 }
 
 type Probes struct {
@@ -77,18 +62,18 @@ func main() {
 	log.SetOutput(os.Stderr)
 
 	// cli arguments
-	var ip = flag.String("ip", "", "IP Address")
+	var ipRangePattern = flag.String("ipRange", "", "IP Address Range")
 	var probesString = flag.String("probes", "", "List of probes delimited by space")
 	var maxConcurrentRequestCount = flag.Int("concurrent", 100, "Concurent request count")
 	var verbose = flag.Bool("verbose", false, "Verbose")
 	var portRangeString = flag.String("portRange", "1-65535", "Port range")
 	flag.Parse()
 
-	if *ip == "" {
-		log.Fatalln("Ip Address not specified")
-	}
-
 	// ip range
+	ipRange, err := NewIpRange(*ipRangePattern)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	// port ragne
 	portRange := portPatternToRange(*portRangeString)
@@ -98,11 +83,11 @@ func main() {
 
 	// init state
 	var checkState = CheckState{
-		count:          0,
-		toHandle:       portRange.maxPort - portRange.minPort + 1,
-		handled:        0,
-		successResults: []PortProtocolCheckResult{},
-		errorResults:   []PortProtocolCheckResult{},
+		requestsInProgress: 0,
+		toHandle:           uint32(portRange.Size()+1) * (ipRange.Size() + 1),
+		handled:            0,
+		successResults:     []PortProtocolCheckResult{},
+		errorResults:       []PortProtocolCheckResult{},
 	}
 
 	var waitGroup sync.WaitGroup
@@ -111,23 +96,30 @@ func main() {
 	go listenPortCheckResult(&checkState, resultChannel, &waitGroup)
 
 	// start loop
-	for port := portRange.minPort; port <= portRange.maxPort; port++ {
-		for {
-			if checkState.count > *maxConcurrentRequestCount {
-				time.Sleep(50 * time.Millisecond)
-			} else {
-				break
+	var currentIP net.IP
+	for ipRange.Valid() {
+		currentIP = ipRange.Current()
+
+		for port := portRange.minPort; port <= portRange.maxPort; port++ {
+			for {
+				if checkState.requestsInProgress > *maxConcurrentRequestCount {
+					time.Sleep(50 * time.Millisecond)
+				} else {
+					break
+				}
 			}
+
+			checkState.mutex.Lock()
+			checkState.requestsInProgress = checkState.requestsInProgress + 1
+			checkState.mutex.Unlock()
+
+			// find services on port
+			waitGroup.Add(1)
+
+			go probe(currentIP.String(), port, probes, resultChannel)
 		}
 
-		checkState.mutex.Lock()
-		checkState.count = checkState.count + 1
-		checkState.mutex.Unlock()
-
-		// find services on port
-		waitGroup.Add(1)
-
-		go probe(*ip, port, resultChannel)
+		ipRange.Next()
 	}
 
 	waitGroup.Wait()
@@ -145,7 +137,7 @@ func main() {
 	printResult("Found services", checkState.successResults)
 }
 
-func probe(ip string, port int, resultChannel chan PortCheckResult) {
+func probe(ip string, port int, probes Probes, resultChannel chan PortCheckResult) {
 	var protocolCheckResult PortProtocolCheckResult
 	var failedChecks []PortProtocolCheckResult
 
@@ -219,7 +211,7 @@ func listenPortCheckResult(
 
 		// add state
 		checkState.mutex.Lock()
-		checkState.count = checkState.count - 1
+		checkState.requestsInProgress = checkState.requestsInProgress - 1
 		checkState.handled = checkState.handled + 1
 		if result.successCheck != nil {
 			checkState.successResults = append(checkState.successResults, *result.successCheck)
@@ -301,11 +293,6 @@ func portPatternToRange(portRangeString string) PortRange {
 	return PortRange{minPort: minPort, maxPort: maxPort}
 }
 
-func ipPatternToRange(ip string) IpRange {
-
-	return IpRange{}
-}
-
 func checkIpHasHttpService(
 	schema string,
 	ip string,
@@ -343,7 +330,12 @@ func checkIpHasMemcachedService(
 	ip string,
 	port int,
 ) PortProtocolCheckResult {
-	mc := memcache.New(ip + ":" + strconv.Itoa(port))
+	addr := ip + ":" + strconv.Itoa(port)
+
+	mc := memcache.New(addr)
+	mc.Timeout = 1 * time.Second
+
+	//err := mc.Set(&memcache.Item{Key: "lol", Value: []byte("kek")})
 	err := mc.Ping()
 
 	if err == nil {
