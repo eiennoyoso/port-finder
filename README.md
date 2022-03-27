@@ -20,6 +20,17 @@ Scan IP address on all renge of ports:
 docker run --rm sokil/port-finder -ip 8.8.8.8
 ```
 
+Scan CIDR IP range:
+
+```
+docker run --rm sokil/port-finder -ip 8.8.8.8/24
+```
+
+Scan IP range:
+```
+docker run --rm sokil/port-finder -ip 8.8.8.8-8.8.200
+```
+
 Scan limited range of ports:
 
 ```
