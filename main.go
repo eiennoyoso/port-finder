@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -300,8 +301,13 @@ func checkIpHasHttpService(
 ) PortProtocolCheckResult {
 	var userAgent = userAgents[rand.Intn(len(userAgents))]
 
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
 	client := http.Client{
-		Timeout: 1 * time.Second,
+		Timeout:   3 * time.Second,
+		Transport: tr,
 	}
 
 	httpUrl := schema + "://" + ip + ":" + strconv.Itoa(port) + "/"
