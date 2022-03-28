@@ -85,3 +85,11 @@ Show check errors:
 ```
 docker run --rm sokil/port-finder -ipRange 8.8.8.8 -verbose
 ```
+
+## Writting log files
+
+Succesful results may be writtent to file:
+
+```
+docker run --rm sokil/port-finder -ipRange 8.8.8.8 -logFile=/tmp/log
+```

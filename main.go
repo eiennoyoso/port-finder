@@ -32,6 +32,7 @@ type CheckState struct {
 
 type PortProtocolCheckResult struct {
 	resultType string // success, error
+	ip         string
 	port       int
 	protocol   string
 	message    string
@@ -72,6 +73,7 @@ func main() {
 	var maxConcurrentRequestCount = flag.Int("concurrent", 100, "Concurent request count")
 	var verbose = flag.Bool("verbose", false, "Verbose")
 	var portRangeString = flag.String("portRange", "1-65535", "Port range")
+	var logFilePath = flag.String("logFile", "", "Path to log file")
 	flag.Parse()
 
 	// ip range
@@ -96,10 +98,17 @@ func main() {
 		errorResults:       []PortProtocolCheckResult{},
 	}
 
+	// init log file
+	var logFile *os.File
+	if *logFilePath != "" {
+		logFile, err = os.Create(*logFilePath)
+		defer logFile.Close()
+	}
+
 	var waitGroup sync.WaitGroup
 
 	resultChannel := make(chan PortCheckResult)
-	go listenPortCheckResult(&checkState, resultChannel, &waitGroup)
+	go listenPortCheckResult(&checkState, resultChannel, logFile, &waitGroup)
 
 	// handle graceful shutdown
 	gracefullStopSignalHandler := make(chan os.Signal, 1)
@@ -218,7 +227,7 @@ func printResult(title string, result []PortProtocolCheckResult) {
 	}
 }
 
-func printProgress(checkState *CheckState) {
+func printProgress(checkState *CheckState, lastCheckResult PortCheckResult) {
 	var eta string
 	if checkState.handled > 100 {
 		probeDuration := time.Now().Unix() - checkState.startTimestamp
@@ -228,12 +237,21 @@ func printProgress(checkState *CheckState) {
 		eta = "-:-:-"
 	}
 
+	// get last checked ip
+	var lastCheckedIp string
+	if lastCheckResult.successCheck != nil {
+		lastCheckedIp = lastCheckResult.successCheck.ip
+	} else {
+		lastCheckedIp = lastCheckResult.failedChecks[0].ip
+	}
+
 	// show progress
 	fmt.Printf(
-		"\r[%3d%%][%d/%d][ETA: %s] Errors: %d, Found: %d",
+		"\r[%3d%%][%d/%d][%s][ETA: %s] Errors: %d, Found: %d",
 		int64(float32(checkState.handled)/float32(checkState.toHandle)*100),
 		checkState.handled,
 		checkState.toHandle,
+		lastCheckedIp,
 		eta,
 		len(checkState.errorResults),
 		len(checkState.successResults),
@@ -243,13 +261,14 @@ func printProgress(checkState *CheckState) {
 func listenPortCheckResult(
 	checkState *CheckState,
 	resultChannel chan PortCheckResult,
+	logFile *os.File,
 	waitGroup *sync.WaitGroup,
 ) {
 	for {
 		result := <-resultChannel
 		waitGroup.Done()
 
-		// add state
+		// change state
 		checkState.mutex.Lock()
 		checkState.requestsInProgress = checkState.requestsInProgress - 1
 		checkState.handled = checkState.handled + 1
@@ -261,8 +280,21 @@ func listenPortCheckResult(
 
 		checkState.mutex.Unlock()
 
+		// if found - write to log
+		if result.successCheck != nil && logFile != nil {
+			logLine := fmt.Sprintf(
+				"%s\t%s:%d",
+				result.successCheck.protocol,
+				result.successCheck.ip,
+				result.successCheck.port,
+			)
+
+			logFile.Write([]byte(logLine + "\n"))
+		}
+
+		// print progress to console
 		if checkState.handled == checkState.toHandle || (checkState.handled%5) == 0 {
-			printProgress(checkState)
+			printProgress(checkState, result)
 		}
 	}
 }
@@ -373,6 +405,7 @@ func checkIpHasHttpService(
 
 	if err == nil {
 		return PortProtocolCheckResult{
+			ip:         ip,
 			port:       port,
 			protocol:   schema,
 			resultType: "success",
@@ -380,6 +413,7 @@ func checkIpHasHttpService(
 		}
 	} else {
 		return PortProtocolCheckResult{
+			ip:         ip,
 			port:       port,
 			protocol:   schema,
 			resultType: "error",
@@ -402,6 +436,7 @@ func checkIpHasMemcachedService(
 
 	if err == nil {
 		return PortProtocolCheckResult{
+			ip:         ip,
 			port:       port,
 			protocol:   "memcached",
 			resultType: "success",
@@ -409,6 +444,7 @@ func checkIpHasMemcachedService(
 		}
 	} else {
 		return PortProtocolCheckResult{
+			ip:         ip,
 			port:       port,
 			protocol:   "memcached",
 			resultType: "error",
