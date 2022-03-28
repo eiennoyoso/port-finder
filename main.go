@@ -247,7 +247,7 @@ func printProgress(checkState *CheckState, lastCheckResult PortCheckResult) {
 
 	// show progress
 	fmt.Printf(
-		"\r[%3d%%][%d/%d][%s][ETA: %s] Errors: %d, Found: %d",
+		"\r[%3d%%][%d/%d][%15s][ETA: %s] Errors: %d, Found: %d",
 		int64(float32(checkState.handled)/float32(checkState.toHandle)*100),
 		checkState.handled,
 		checkState.toHandle,
