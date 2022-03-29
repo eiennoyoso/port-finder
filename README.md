@@ -91,5 +91,5 @@ docker run --rm sokil/port-finder -ipRange 8.8.8.8 -verbose
 Succesful results may be writtent to file:
 
 ```
-docker run --rm sokil/port-finder -ipRange 8.8.8.8 -logFile=/tmp/log
+docker run -v=$PWD:/log --rm sokil/port-finder -ipRange 8.8.8.8 -logFile=/log/8.8.8.8
 ```
